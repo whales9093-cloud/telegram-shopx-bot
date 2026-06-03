@@ -1,6 +1,7 @@
 import telebot
 import sqlite3
 import random
+
 TOKEN = "8761896381:AAGotG_C1pC5FqO_1OmDdjFOB2SJPHt4OcA"
 ADMIN_ID = 7058954196  # your Telegram ID
 
@@ -16,20 +17,32 @@ CREATE TABLE IF NOT EXISTS products (
     price TEXT
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS orders (
+    order_id INTEGER,
+    user_id INTEGER,
+    product TEXT,
+    quantity TEXT,
+    status TEXT,
+    proof TEXT
+)
+""")
+
 conn.commit()
 
 # ---------------- DEFAULT PRODUCTS ----------------
 default_products = [
-    ("rice", "₦1,500 per kg"),
-    ("beans", "₦2,000 per kg"),
-    ("oil", "₦3,500 per litre"),
-    ("sugar", "₦1,200 per kg")
+    ("rice", "₦1500"),
+    ("beans", "₦2000"),
+    ("oil", "₦3500"),
+    ("sugar", "₦1200")
 ]
 
-for product in default_products:
-    cursor.execute("SELECT * FROM products WHERE name=?", (product[0],))
+for p in default_products:
+    cursor.execute("SELECT * FROM products WHERE name=?", (p[0],))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO products VALUES (?, ?)", product)
+        cursor.execute("INSERT INTO products VALUES (?, ?)", p)
 
 conn.commit()
 
@@ -37,100 +50,193 @@ conn.commit()
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message,
-        "👋 Welcome to Shop Bot\n\n"
-        "Commands:\n"
+        "🏪 BUSINESS SHOP BOT\n\n"
+        "User Commands:\n"
         "- products\n"
-        "- rice\n"
+        "- order rice 2\n"
         "- pay\n"
-        "- add noodles 2500 (admin only)"
+        "- send proof (reply to order)\n\n"
+        "Admin Commands:\n"
+        "- orders\n"
+        "- approve 1234\n"
+        "- delivered 1234\n"
+        "- delete 1234\n"
+        "- add rice 1500"
     )
 
-# ---------------- PRODUCTS LIST ----------------
+# ---------------- PRODUCTS ----------------
 @bot.message_handler(func=lambda m: m.text and m.text.lower() == "products")
-def show_products(message):
+def products(message):
     cursor.execute("SELECT * FROM products")
     items = cursor.fetchall()
 
-    text = "🛒 Products:\n"
-    for item in items:
-        text += f"- {item[0]} ({item[1]})\n"
+    msg = "🛒 PRODUCTS\n\n"
+    for i in items:
+        msg += f"- {i[0]} = ₦{i[1]}\n"
 
-    bot.reply_to(message, text)
+    bot.reply_to(message, msg)
 
-# ---------------- MAIN HANDLER ----------------
-@bot.message_handler(func=lambda message: True)
-def handle(message):
-    text = message.text.lower()
-    user_id = message.from_user.id
+# ---------------- PAYMENT INFO ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "pay")
+def pay(message):
+    bot.reply_to(message,
+        "💳 PAYMENT DETAILS\n\n"
+        "Bank: Example Bank\n"
+        "Account: 0123456789\n"
+        "Name: BUSINESS SHOP\n\n"
+        "After payment, send proof like:\n"
+        'proof 1234 image_link'
+    )
 
-    # ---------- PAYMENT ----------
-    if text == "pay":
-        bot.reply_to(
-            message,
-            "💳 PAYMENT DETAILS\n\n"
-            "Bank: Example Bank\n"
-            "Account Name: Wale Shop\n"
-            "Account Number: 0123456789\n\n"
-            "After payment, send your reference number."
-        )
+# ---------------- ORDER SYSTEM ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("order"))
+def order(message):
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ Use: order rice 2")
         return
 
-    # ---------- ADMIN ADD PRODUCT ----------
-    if user_id == ADMIN_ID:
-        if text.startswith("add"):
-            try:
-                parts = text.split()
-                name = parts[1]
-                price = parts[2]
+    product = parts[1]
+    qty = parts[2]
+    order_id = random.randint(1000, 9999)
 
-                cursor.execute(
-                    "INSERT INTO products VALUES (?, ?)",
-                    (name, f"₦{price}")
-                )
-                conn.commit()
+    cursor.execute(
+        "INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)",
+        (order_id, message.from_user.id, product, qty, "pending", "")
+    )
+    conn.commit()
 
-                bot.reply_to(message, f"✅ {name} added successfully!")
-                return
+    bot.reply_to(message,
+        f"✅ ORDER CREATED\n\n"
+        f"Order ID: {order_id}\n"
+        f"Product: {product}\n"
+        f"Qty: {qty}\n"
+        f"Status: pending\n\n"
+        f"Now pay and send proof"
+    )
 
-            except:
-                bot.reply_to(message, "❌ Use format: add noodles 2500")
-                return
-# ---------- ORDER SYSTEM ----------
-    if text.startswith("order"):
-        try:
-            parts = text.split()
+# ---------------- PAYMENT PROOF ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("proof"))
+def proof(message):
 
-            product_name = parts[1]
-            quantity = parts[2]
+    parts = message.text.split()
 
-            order_id = random.randint(1000, 9999)
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ Use: proof 1234 image_link")
+        return
 
-            bot.reply_to(
-                message,
-                f"✅ Order received!\n\n"
-                f"Product: {product_name}\n"
-                f"Quantity: {quantity}\n"
-                f"Order ID: {order_id}\n\n"
-                f"Type 'pay' for payment details."
-            )
-            return
+    order_id = parts[1]
+    proof_link = parts[2]
 
-        except:
-            bot.reply_to(
-                message,
-                "❌ Use: order rice 2"
-            )
-            return
-    # ---------- PRODUCT SEARCH ----------
+    cursor.execute(
+        "UPDATE orders SET proof=?, status='paid' WHERE order_id=?",
+        (proof_link, order_id)
+    )
+    conn.commit()
+
+    bot.reply_to(message, f"✅ Proof received for order {order_id}. Waiting admin approval.")
+
+# ---------------- ADMIN PANEL ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower() == "orders")
+def admin_orders(message):
+
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "❌ Not allowed")
+        return
+
+    cursor.execute("SELECT * FROM orders")
+    orders = cursor.fetchall()
+
+    if not orders:
+        bot.reply_to(message, "📦 No orders")
+        return
+
+    msg = "📦 ALL ORDERS\n\n"
+
+    for o in orders:
+        msg += (
+            f"ID: {o[0]}\n"
+            f"User: {o[1]}\n"
+            f"Product: {o[2]}\n"
+            f"Qty: {o[3]}\n"
+            f"Status: {o[4]}\n"
+            f"Proof: {o[5]}\n\n"
+        )
+
+    bot.reply_to(message, msg)
+
+# ---------------- APPROVE PAYMENT ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("approve"))
+def approve(message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    order_id = message.text.split()[1]
+
+    cursor.execute(
+        "UPDATE orders SET status='approved' WHERE order_id=?",
+        (order_id,)
+    )
+    conn.commit()
+
+    bot.reply_to(message, f"✅ Order {order_id} approved")
+
+# ---------------- MARK DELIVERED ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("delivered"))
+def delivered(message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    order_id = message.text.split()[1]
+
+    cursor.execute(
+        "UPDATE orders SET status='delivered' WHERE order_id=?",
+        (order_id,)
+    )
+    conn.commit()
+
+    bot.reply_to(message, f"🚚 Order {order_id} delivered")
+
+# ---------------- ADD PRODUCT ----------------
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("add"))
+def add_product(message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    parts = message.text.split()
+
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ Use: add rice 1500")
+        return
+
+    name = parts[1]
+    price = parts[2]
+
+    cursor.execute("INSERT INTO products VALUES (?, ?)", (name, price))
+    conn.commit()
+
+    bot.reply_to(message, f"✅ {name} added")
+
+# ---------------- SEARCH PRODUCT ----------------
+@bot.message_handler(func=lambda m: True)
+def search(message):
+
+    if not message.text:
+        return
+
+    text = message.text.lower()
+
     cursor.execute("SELECT * FROM products WHERE name=?", (text,))
     product = cursor.fetchone()
 
     if product:
-        bot.reply_to(message, f"{product[0]} = {product[1]}")
+        bot.reply_to(message, f"{product[0]} = ₦{product[1]}")
     elif text == "hello":
-        bot.reply_to(message, "Hello 👋 Type 'products'")
-    else:
-        bot.reply_to(message, "❌ Product not found.")
+        bot.reply_to(message, "👋 Welcome to Business Shop Bot")
 
 # ---------------- RUN BOT ----------------
 bot.polling()
