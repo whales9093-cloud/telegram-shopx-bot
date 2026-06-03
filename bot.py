@@ -95,7 +95,32 @@ def handle(message):
             except:
                 bot.reply_to(message, "❌ Use format: add noodles 2500")
                 return
+# ---------- ORDER SYSTEM ----------
+    if text.startswith("order"):
+        try:
+            parts = text.split()
 
+            product_name = parts[1]
+            quantity = parts[2]
+
+            order_id = random.randint(1000, 9999)
+
+            bot.reply_to(
+                message,
+                f"✅ Order received!\n\n"
+                f"Product: {product_name}\n"
+                f"Quantity: {quantity}\n"
+                f"Order ID: {order_id}\n\n"
+                f"Type 'pay' for payment details."
+            )
+            return
+
+        except:
+            bot.reply_to(
+                message,
+                "❌ Use: order rice 2"
+            )
+            return
     # ---------- PRODUCT SEARCH ----------
     cursor.execute("SELECT * FROM products WHERE name=?", (text,))
     product = cursor.fetchone()
