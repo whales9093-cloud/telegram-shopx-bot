@@ -24,9 +24,10 @@ CREATE TABLE IF NOT EXISTS orders (
     user_id INTEGER,
     product TEXT,
     quantity TEXT,
-    status TEXT
+    payment_status TEXT,
+    delivery_status TEXT
 )
-""")
+""") 
 
 conn.commit()
 
@@ -95,7 +96,8 @@ def orders(message):
             f"User: {o[1]}\n"
             f"Product: {o[2]}\n"
             f"Qty: {o[3]}\n"
-            f"Status: {o[4]}\n\n"
+            f"Payment: {o[4]}\n"
+            f"Delivery: {o[5]}\n\n"
         )
 
     bot.reply_to(message, msg)
@@ -137,17 +139,28 @@ def order(message):
     order_id = random.randint(1000, 9999)
 
     cursor.execute(
-        "INSERT INTO orders VALUES (?, ?, ?, ?, ?)",
-        (order_id, message.from_user.id, product, qty, "pending")
+        "INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            order_id,
+            message.from_user.id,
+            product,
+            qty,
+            "PENDING",
+            "NOT_DELIVERED"
+        )
     )
+
     conn.commit()
 
-    bot.reply_to(message,
+    bot.reply_to(
+        message,
         f"✅ ORDER CREATED\n\n"
         f"ID: {order_id}\n"
         f"Product: {product}\n"
         f"Qty: {qty}\n"
-        f"Status: pending"
+        f"Payment: PENDING\n"
+        f"Delivery: NOT_DELIVERED\n\n"
+        f"Type 'pay' for payment details."
     )
 
 # ---------------- APPROVE ----------------
@@ -157,12 +170,26 @@ def approve(message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    order_id = message.text.split()[1]
+    try:
+        order_id = message.text.split()[1]
 
-    cursor.execute("UPDATE orders SET status='approved' WHERE order_id=?", (order_id,))
-    conn.commit()
+        cursor.execute(
+            "UPDATE orders SET payment_status=? WHERE order_id=?",
+            ("PAID", order_id)
+        )
 
-    bot.reply_to(message, f"✅ Approved {order_id}")
+        conn.commit()
+
+        bot.reply_to(
+            message,
+            f"✅ Order {order_id} marked as PAID"
+        )
+
+    except:
+        bot.reply_to(
+            message,
+            "Use: approve 1234"
+        )
 
 # ---------------- DELIVERED ----------------
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith("delivered"))
@@ -171,12 +198,26 @@ def delivered(message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    order_id = message.text.split()[1]
+    try:
+        order_id = message.text.split()[1]
 
-    cursor.execute("UPDATE orders SET status='delivered' WHERE order_id=?", (order_id,))
-    conn.commit()
+        cursor.execute(
+            "UPDATE orders SET delivery_status=? WHERE order_id=?",
+            ("DELIVERED", order_id)
+        )
 
-    bot.reply_to(message, f"🚚 Delivered {order_id}")
+        conn.commit()
+
+        bot.reply_to(
+            message,
+            f"🚚 Order {order_id} marked DELIVERED"
+        )
+
+    except:
+        bot.reply_to(
+            message,
+            "Use: delivered 1234"
+        )
 
 # ---------------- SEARCH ----------------
 @bot.message_handler(func=lambda m: True)
@@ -187,6 +228,12 @@ def search(message):
 
     text = message.text.lower()
 
+    # ---------- HELLO FIX ----------
+    if text == ["hello","hi","hey"]:
+        bot.reply_to(message, "👋 Hello! Welcome to Shop Bot")
+        return
+
+    # ---------- PRODUCT SEARCH ----------
     cursor.execute("SELECT * FROM products WHERE name=?", (text,))
     product = cursor.fetchone()
 
